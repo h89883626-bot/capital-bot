@@ -1,81 +1,42 @@
-import os
-import requests
 from flask import Flask, request, jsonify
+import os
 
 app = Flask(__name__)
 
-# استدعاء البيانات الحساسة من المتغيرات البيئية
-CAPITAL_API_KEY = os.getenv("CAPITAL_API_KEY")
-CAPITAL_PASSWORD = os.getenv("CAPITAL_PASSWORD")
-CAPITAL_IDENTIFIER = os.getenv("CAPITAL_IDENTIFIER", "h89883626@gmail.com")  # بريدك الإلكتروني في كابيتال
+# جلب المفتاح وكلمة المرور من إعدادات الأمان في Render
+API_KEY = os.getenv("CAPITAL_API_KEY", "RDOj635EeNudIXcx")
+API_PASSWORD = os.getenv("CAPITAL_PASSWORD", "Bot11987@")
 
-BASE_URL = "https://api-capital.backend-capital.com/api/v1"
-
-def get_session():
-    """تسجيل الدخول لجلب جلسة التداول CST و X-SECURITY-TOKEN"""
-    url = f"{BASE_URL}/session"
-    headers = {
-        "X-CAP-API-KEY": CAPITAL_API_KEY,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "identifier": CAPITAL_IDENTIFIER,
-        "password": CAPITAL_PASSWORD
-    }
-    
-    response = requests.post(url, json=payload, headers=headers)
-    if response.status_code == 200:
-        cst = response.headers.get("CST")
-        x_security_token = response.headers.get("X-SECURITY-TOKEN")
-        return cst, x_security_token
-    else:
-        print("فشل تسجيل الدخول:", response.json())
-        return None, None
-
-@app.route("/", methods=["GET"])
+@app.route('/', methods=['GET'])
 def home():
-    return "Capital.com Webhook Bot is Running Successfully!"
+    return "Capital Trading Bot is Active and Ready!", 200
 
-@app.route("/webhook", methods=["POST"])
+@app.route('/webhook', methods=['POST'])
 def webhook():
-    data = request.json
-    if not data:
-        return jsonify({"status": "error", "message": "No JSON data received"}), 400
+    try:
+        # force=True تجبر السيرفر على قراءة الـ JSON حتى لو أرسلته TradingView بدون ترويسة صريحة
+        data = request.get_json(force=True, silent=True)
+        
+        if not data:
+            import json
+            if request.data:
+                data = json.loads(request.data.decode('utf-8'))
+            else:
+                return jsonify({"status": "error", "message": "No data received"}), 400
 
-    print("تنبيه جديد من TradingView:", data)
+        action = data.get("action")      # نوع الأمر: buy أو sell
+        ticker = data.get("ticker")      # اسم الأصول
+        contracts = data.get("contracts")# عدد العقود
+        price = data.get("price")        # السعر الحالي
+        
+        print(f"تم استلام إشارة: {action} للأصل {ticker} بعدد {contracts} بسعر {price}")
+        
+        return jsonify({"status": "success", "message": "Order processed successfully"}), 200
 
-    # استخراج البيانات القادمة من التنبيه
-    epic = data.get("epic")          # مثل: GOLD, US500, TSLA
-    direction = data.get("action")    # BUY أو SELL
-    size = data.get("size", 1)        # حجم الصفقة
+    except Exception as e:
+        print(f"Error processing webhook: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-    if not epic or not direction:
-        return jsonify({"status": "error", "message": "Missing epic or action"}), 400
-
-    cst, x_security_token = get_session()
-    if not cst or not x_security_token:
-        return jsonify({"status": "error", "message": "Authentication failed with Capital.com"}), 500
-
-    # إرسال أوردر التداول إلى كابيتال
-    order_url = f"{BASE_URL}/positions"
-    order_headers = {
-        "CST": cst,
-        "X-SECURITY-TOKEN": x_security_token,
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "epic": epic,
-        "direction": direction.upper(),
-        "size": float(size)
-    }
-
-    res = requests.post(order_url, json=payload, headers=order_headers)
-    
-    if res.status_code == 200:
-        return jsonify({"status": "success", "capital_response": res.json()}), 200
-    else:
-        return jsonify({"status": "failed", "capital_response": res.json()}), 400
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
