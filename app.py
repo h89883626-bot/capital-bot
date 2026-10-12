@@ -9,16 +9,22 @@ CAPITAL_IDENTIFIER = os.environ.get("CAPITAL_IDENTIFIER", "")
 CAPITAL_PASSWORD = os.environ.get("CAPITAL_PASSWORD", "")
 CAPITAL_BASE_URL = os.environ.get("CAPITAL_BASE_URL", "https://api-capital.backend-capital.com/api/v1")
 
+# ترويسة متصفح حقيقي لتجاوز حماية المنصة (Incapsula)
+COMMON_HEADERS = {
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 def get_capital_session():
     url = f"{CAPITAL_BASE_URL}/session"
-    headers = {
-        "X-CAP-API-KEY": CAPITAL_API_KEY,
-        "Content-Type": "application/json"
-    }
+    headers = COMMON_HEADERS.copy()
+    headers["X-CAP-API-KEY"] = CAPITAL_API_KEY
+    
     payload = {
         "identifier": CAPITAL_IDENTIFIER,
         "password": CAPITAL_PASSWORD
     }
+    
     response = requests.post(url, json=payload, headers=headers)
     if response.status_code == 200:
         cst = response.headers.get("CST")
@@ -34,12 +40,11 @@ def place_order(epic, direction, size):
         return False, "Authentication Error with Capital.com"
 
     url = f"{CAPITAL_BASE_URL}/positions"
-    headers = {
-        "X-CAP-API-KEY": CAPITAL_API_KEY,
-        "CST": cst,
-        "X-SECURITY-TOKEN": x_security_token,
-        "Content-Type": "application/json"
-    }
+    headers = COMMON_HEADERS.copy()
+    headers["X-CAP-API-KEY"] = CAPITAL_API_KEY
+    headers["CST"] = cst
+    headers["X-SECURITY-TOKEN"] = x_security_token
+    
     payload = {
         "epic": epic,
         "direction": direction,
@@ -78,7 +83,7 @@ def webhook():
 
         if success:
             print(f"Order executed successfully: {result}")
-            return jsonify({"status": "success", "data": result}), 200
+            return jsonify({"status":`success`, "data": result}), 200
         else:
             print(f"Failed to place order: {result}")
             return jsonify({"status": "error", "details": result}), 500
