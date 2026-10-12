@@ -9,7 +9,6 @@ CAPITAL_IDENTIFIER = os.environ.get("CAPITAL_IDENTIFIER", "")
 CAPITAL_PASSWORD = os.environ.get("CAPITAL_PASSWORD", "")
 CAPITAL_BASE_URL = os.environ.get("CAPITAL_BASE_URL", "https://api-capital.backend-capital.com/api/v1")
 
-# ترويسة متصفح حقيقي لتجاوز حماية المنصة (Incapsula)
 COMMON_HEADERS = {
     "Content-Type": "application/json",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -52,7 +51,7 @@ def place_order(epic, direction, size):
     }
 
     response = requests.post(url, json=payload, headers=headers)
-    if response.status_code == 200 or response.status_code == 201:
+    if response.status_code in [200, 201]:
         return True, response.json()
     else:
         return False, response.text
@@ -83,7 +82,7 @@ def webhook():
 
         if success:
             print(f"Order executed successfully: {result}")
-            return jsonify({"status":`success`, "data": result}), 200
+            return jsonify({"status": "success", "data": result}), 200
         else:
             print(f"Failed to place order: {result}")
             return jsonify({"status": "error", "details": result}), 500
