@@ -1,102 +1,92 @@
-from flask import Flask, request, jsonify
 import os
 import requests
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# إعدادات الحساب وبيانات الاعتماد
+# إعدادات حساب Capital.com الحقيقي (Live)
+CAPITAL_URL = "https://api-capital.backend-capital.com/api/v1"
+
+# استدعاء البيانات من متغيرات البيئة أو تعيينها مباشرة
 API_KEY = os.getenv("CAPITAL_API_KEY", "RDOj635EeNudIXcx")
-API_PASSWORD = os.getenv("CAPITAL_PASSWORD", "Bot11987@")
-# معرف المستخدم أو البريد الخاص بحساب Capital.com إذا لزم الأمر، أو يتم الاعتماد على المفتاح
-API_IDENTIFIER = os.getenv("CAPITAL_IDENTIFIER", "") 
+API_PASSWORD = os.getenv("CAPITAL_PASSWORD", "")
+IDENTIFIER = os.getenv("CAPITAL_IDENTIFIER", "")  # البريد الإلكتروني الخاص بحسابك في Capital.com
 
-# رابط الـ API الرسمي لمنصة Capital.com (استخدم البيلو/الديمو أو الحقيقي حسب حسابك)
-# للوضع التجريبي (Demo): https://demo-api-capital.backend-capital.com/api/v1
-# للوضع الحقيقي (Live): https://api-capital.backend-capital.com/api/v1
-BASE_URL = "https://demo-api-capital.backend-capital.com/api/v1"
 
-def get_session_tokens():
-    """الحصول على رموز الجلسة للتصريح بعمليات التداول"""
-    url = f"{BASE_URL}/session"
+def get_session():
+    """إنشاء جلسة تداول واستخراج التوكينات (CST & X-SECURITY-TOKEN)"""
+    url = f"{CAPITAL_URL}/session"
     headers = {
         "X-CAP-API-KEY": API_KEY,
         "Content-Type": "application/json"
     }
     payload = {
-        "identifier": API_IDENTIFIER,
+        "identifier": IDENTIFIER,
         "password": API_PASSWORD
     }
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        if response.status_code == 200:
-            cst = response.headers.get("CST")
-            x_security_token = response.headers.get("X-SECURITY-TOKEN")
-            return cst, x_security_token
-    except Exception as e:
-        print(f"Auth Error: {e}")
-    return None, None
+    
+    response = requests.post(url, json=payload, headers=headers)
+    
+    if response.status_code == 200:
+        cst = response.headers.get("CST")
+        x_sec = response.headers.get("X-SECURITY-TOKEN")
+        return cst, x_sec
+    else:
+        print(f"خطأ في تسجيل الدخول: {response.status_code} - {response.text}")
+        return None, None
 
-@app.route('/', methods=['GET'])
+
+@app.route("/", methods=["GET", "HEAD"])
 def home():
-    return "Capital Trading Bot with API Execution is Active!", 200
+    """نقطة فحص الرابط وإيقاظ السيرفر"""
+    return "Capital.com Live Trading Bot is Running!", 200
 
-@app.route('/webhook', methods=['POST'])
+
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    try:
-        data = request.get_json(force=True, silent=True)
-        
-        if not data:
-            import json
-            if request.data:
-                data = json.loads(request.data.decode('utf-8'))
-            else:
-                return jsonify({"status": "error", "message": "No data received"}), 400
+    """استقبال إشارات TradingView وتنفيذ الصفقات الحقيقية"""
+    data = request.json
+    print("تم استلام إشارة من TradingView:", data)
 
-        action = data.get("action")      # buy أو sell
-        ticker = data.get("ticker")      # رمز الأصل (مثلاً GOLD)
-        contracts = data.get("contracts", 1) # عدد العقود أو حجم الصفقة
-        price = data.get("price")        # السعر
-        
-        print(f"تم استلام إشارة من ترندفيو: {action} للأصل {ticker} بعدد {contracts}")
+    if not data:
+        return jsonify({"status": "error", "message": "لم يتم استلام أي بيانات JSON"}), 400
 
-        # تنفيذ الطلب فعلياً في منصة Capital.com
-        cst, x_token = get_session_tokens()
-        if not cst or not x_token:
-            return jsonify({"status": "error", "message": "Failed to authenticate with Capital.com"}), 401
+    ticker = data.get("ticker", "GOLD")
+    action = data.get("action", "").upper()  # BUY أو SELL
+    size = data.get("contracts", 1)  # عدد العقود
 
-        trade_url = f"{BASE_URL}/positions"
-        headers = {
-            "X-CAP-API-KEY": API_KEY,
-            "CST": cst,
-            "X-SECURITY-TOKEN": x_token,
-            "Content-Type": "application/json"
-        }
-        
-        # تحويل صيغة أمر TradingView إلى صيغة طلب Capital.com
-        # direction تكون 'BUY' أو 'SELL'
-        direction = "BUY" if str(action).upper() in ["BUY", "LONG"] else "SELL"
-        
-        trade_payload = {
-            "epic": ticker,
-            "direction": direction,
-            "size": float(contracts),
-            "guaranteedStopLoss": False,
-            "type": "MARKET" # أمر مباشر بسعر السوق
-        }
+    # تحديد اتجاه الصفقة
+    direction = "BUY" if action == "BUY" else "SELL"
 
-        trade_response = requests.post(trade_url, json=trade_payload, headers=headers)
-        
-        if trade_response.status_code in [200, 201]:
-            print("تم تنفيذ الصفقة بنجاح على المنصة!")
-            return jsonify({"status": "success", "message": "Order executed on Capital.com"}), 200
-        else:
-            print(f"فشل التنفيذ: {trade_response.text}")
-            return jsonify({"status": "error", "details": trade_response.text}), 400
+    # تسجيل الدخول وتوليد التوكين
+    cst, x_sec = get_session()
+    if not cst or not x_sec:
+        return jsonify({"status": "error", "message": "فشل الاتصال بمنصة Capital.com"}), 500
 
-    except Exception as e:
-        print(f"Error processing webhook: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+    # إرسال أمر فتح الصفقة إلى API
+    order_url = f"{CAPITAL_URL}/positions"
+    order_headers = {
+        "X-CAP-API-KEY": API_KEY,
+        "CST": cst,
+        "X-SECURITY-TOKEN": x_sec,
+        "Content-Type": "application/json"
+    }
+    order_payload = {
+        "epic": ticker,
+        "direction": direction,
+        "size": float(size)
+    }
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    order_res = requests.post(order_url, json=order_payload, headers=order_headers)
+
+    if order_res.status_code == 200:
+        print(f"تم تنفيذ الصفقة بنجاح على الحساب الحقيقي! {direction} {size} {ticker}")
+        return jsonify({"status": "success", "response": order_res.json()}), 200
+    else:
+        print(f"خطأ أثناء تنفيذ الصفقة: {order_res.status_code} - {order_res.text}")
+        return jsonify({"status": "error", "details": order_res.text}), order_res.status_code
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
